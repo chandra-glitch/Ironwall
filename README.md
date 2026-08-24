@@ -1,2 +1,2 @@
 # Ironwall
-Autonomous Financial Risk Intelligence &amp; Stress Testing Platform
+Autonomous Financial Risk Intelligence Stress Testing Platform
