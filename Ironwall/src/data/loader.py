@@ -1,4 +1,4 @@
-import csv
+import csv 
 
 
 def load_market_data(file_path):
