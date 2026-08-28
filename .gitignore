@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments and local configuration
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Generated reports and downloaded market data
+results/*
+!results/.gitkeep
+data/downloads/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ironwall-risk"
+version = "0.2.0"
+description = "A transparent financial risk analytics and stress-testing toolkit."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Chandra Sekhar Sahoo" },
+]
+keywords = ["finance", "risk", "value-at-risk", "portfolio", "python"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.optional-dependencies]
+market = ["yfinance>=0.2.54,<2"]
+dev = [
+  "pytest>=8.3,<9",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+ironwall = "ironwall.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ironwall"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
