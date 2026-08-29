@@ -1,7 +1,15 @@
 import json
 
-from ironwall.metrics import RiskMetrics
-from ironwall.report import build_report, classify_risk, render_markdown, save_report
+from ironwall.metrics import RiskMetrics, VaRBacktest
+from ironwall.report import (
+    build_report,
+    build_var_backtest_report,
+    classify_risk,
+    render_markdown,
+    render_var_backtest_markdown,
+    save_report,
+    save_var_backtest_report,
+)
 
 
 def make_metrics(**overrides):
@@ -60,3 +68,27 @@ def test_save_report_rejects_unknown_format(tmp_path):
         assert ".json" in str(exc)
     else:
         raise AssertionError("Expected unsupported report format to fail")
+
+
+def test_var_backtest_report_is_machine_and_human_readable(tmp_path):
+    result = VaRBacktest(
+        confidence=0.95,
+        window=10,
+        forecast_observations=20,
+        exceptions=2,
+        expected_exceptions=1.0,
+        exception_rate=0.10,
+        expected_exception_rate=0.05,
+        coverage_ratio=2.0,
+        kupiec_statistic=0.5,
+        kupiec_p_value=0.4795,
+    )
+    report = build_var_backtest_report(result, source="sample.csv")
+
+    markdown = render_var_backtest_markdown(report)
+    output = save_var_backtest_report(report, tmp_path / "backtest.json")
+    payload = json.loads(output.read_text(encoding="utf-8"))
+
+    assert "Observed exceptions | 2" in markdown
+    assert payload["report_type"] == "historical_var_backtest"
+    assert payload["result"]["kupiec_p_value"] == 0.4795

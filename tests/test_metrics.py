@@ -5,6 +5,7 @@ import pytest
 from ironwall.metrics import (
     analyze_prices,
     analyze_returns,
+    backtest_var,
     build_wealth_index,
     calculate_cvar,
     calculate_max_drawdown,
@@ -38,6 +39,27 @@ def test_maximum_drawdown_is_positive_loss():
 
 def test_build_wealth_index():
     assert build_wealth_index([0.10, -0.10]) == pytest.approx((100, 110, 99))
+
+
+def test_var_backtest_uses_only_prior_returns_and_counts_exceptions():
+    result = backtest_var(
+        [-0.01, 0.02, -0.02, 0.01, -0.10, 0.00, 0.03, -0.05],
+        confidence=0.75,
+        window=4,
+    )
+
+    assert result.forecast_observations == 4
+    assert result.exceptions == 2
+    assert result.expected_exceptions == pytest.approx(1.0)
+    assert result.exception_rate == pytest.approx(0.5)
+    assert result.coverage_ratio == pytest.approx(2.0)
+    assert 0 <= result.kupiec_p_value <= 1
+
+
+@pytest.mark.parametrize("window", [True, 1, 8])
+def test_var_backtest_rejects_invalid_windows(window):
+    with pytest.raises(ValueError, match="window"):
+        backtest_var([0.01, -0.01, 0.02, -0.02, 0.03, -0.03, 0.04, -0.04], window=window)
 
 
 def test_analyze_prices_returns_complete_snapshot():
