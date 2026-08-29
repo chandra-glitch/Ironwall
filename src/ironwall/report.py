@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ironwall.metrics import RiskMetrics
+from ironwall.metrics import RiskMetrics, VaRBacktest
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,22 @@ class RiskReport:
         if self.risk_contributions is not None:
             payload["risk_contributions"] = self.risk_contributions
         return payload
+
+
+@dataclass(frozen=True)
+class VaRBacktestReport:
+    generated_at: str
+    source: str
+    result: VaRBacktest
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "project": "IRONWALL",
+            "report_type": "historical_var_backtest",
+            "generated_at": self.generated_at,
+            "source": self.source,
+            "result": self.result.to_dict(),
+        }
 
 
 def classify_risk(metrics: RiskMetrics) -> str:
@@ -70,6 +86,14 @@ def build_report(
         metrics=metrics,
         weights=dict(weights) if weights is not None else None,
         risk_contributions=(dict(risk_contributions) if risk_contributions is not None else None),
+    )
+
+
+def build_var_backtest_report(result: VaRBacktest, *, source: str) -> VaRBacktestReport:
+    return VaRBacktestReport(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        source=source,
+        result=result,
     )
 
 
@@ -121,6 +145,35 @@ def render_markdown(report: RiskReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_var_backtest_markdown(report: VaRBacktestReport) -> str:
+    result = report.result
+    lines = [
+        "# IRONWALL Historical VaR Backtest",
+        "",
+        f"- **Generated (UTC):** {report.generated_at}",
+        f"- **Source:** {report.source}",
+        f"- **Confidence:** {result.confidence:.1%}",
+        f"- **Rolling window:** {result.window} returns",
+        "",
+        "## Exception coverage",
+        "",
+        "| Measure | Result |",
+        "|---|---:|",
+        f"| Out-of-sample forecasts | {result.forecast_observations} |",
+        f"| Observed exceptions | {result.exceptions} |",
+        f"| Expected exceptions | {result.expected_exceptions:.2f} |",
+        f"| Observed exception rate | {result.exception_rate:.2%} |",
+        f"| Expected exception rate | {result.expected_exception_rate:.2%} |",
+        f"| Coverage ratio | {result.coverage_ratio:.2f}x |",
+        f"| Kupiec LR statistic | {result.kupiec_statistic:.4f} |",
+        f"| Kupiec p-value | {result.kupiec_p_value:.4f} |",
+        "",
+        "> A p-value below 0.05 suggests the observed exception frequency is inconsistent with",
+        "> the requested VaR confidence. It is not, by itself, a complete model validation.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def save_report(report: RiskReport, path: str | Path) -> Path:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,4 +187,20 @@ def save_report(report: RiskReport, path: str | Path) -> Path:
         output_path.write_text(render_markdown(report), encoding="utf-8")
     else:
         raise ValueError("Report output must end in .json, .md, or .markdown.")
+    return output_path
+
+
+def save_var_backtest_report(report: VaRBacktestReport, path: str | Path) -> Path:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    suffix = output_path.suffix.lower()
+    if suffix == ".json":
+        output_path.write_text(
+            json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    elif suffix in {".md", ".markdown"}:
+        output_path.write_text(render_var_backtest_markdown(report), encoding="utf-8")
+    else:
+        raise ValueError("Backtest output must end in .json, .md, or .markdown.")
     return output_path

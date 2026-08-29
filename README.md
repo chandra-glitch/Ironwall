@@ -15,6 +15,7 @@ volatility, and produces reports suitable for both people and downstream applica
 - Strict validation for single-asset and aligned portfolio CSV files
 - Daily returns, total return, annualized volatility and Sharpe ratio
 - Historical Value at Risk (VaR) and Conditional VaR / Expected Shortfall
+- Rolling historical VaR backtesting with a Kupiec unconditional coverage test
 - Maximum drawdown using a portfolio wealth curve
 - Long-only weighted portfolio analysis
 - Euler volatility-risk contribution by asset
@@ -53,6 +54,13 @@ Analyse the included synthetic single-asset dataset:
 ironwall analyze --csv data/sample_market_data.csv
 ~~~
 
+Backtest whether rolling 95% historical VaR forecasts achieve their expected coverage:
+
+~~~powershell
+ironwall backtest --csv data/sample_market_data.csv --window 10 `
+  --output results/var-backtest.md
+~~~
+
 Analyse the example banking portfolio:
 
 ~~~powershell
@@ -81,12 +89,19 @@ ironwall portfolio --csv data/downloads/banks.csv --weights JPM=0.5,BAC=0.3,GS=0
 |---|---|
 | VaR | Interpolated historical return quantile, displayed as a positive loss |
 | CVaR | Mean of observations at or below the VaR cutoff, displayed as a positive loss |
+| VaR backtest | One-step forecasts from prior returns only; exceptions are losses beyond VaR |
+| Kupiec test | Likelihood-ratio test of whether the observed exception rate matches confidence |
 | Volatility | Sample return standard deviation multiplied by the square root of 252 |
 | Drawdown | Largest peak-to-trough decline, displayed as a positive loss |
 | Risk contribution | Euler contribution to portfolio variance; contributions sum to 100% |
 
 The LOW, MEDIUM and HIGH labels use transparent educational thresholds across volatility, VaR,
 CVaR and drawdown. They are not trading signals or regulatory risk limits.
+
+The exception-coverage statistic follows the likelihood-ratio method introduced by
+[Kupiec (1995)](https://doi.org/10.3905/jod.1995.407942). Tail tests have limited power with
+small out-of-sample datasets, so treat the included short sample as a software demonstration and
+use a substantially longer history for model validation.
 
 ## Input formats
 
@@ -130,7 +145,7 @@ pytest
 ## Roadmap
 
 - Monte Carlo VaR and scenario stress tests
-- Rolling risk windows and backtesting
+- Rolling portfolio risk windows and backtest visualizations
 - Factor exposure and correlation analysis
 - FastAPI service and interactive dashboard
 - Model-risk documentation and reproducible research notebooks

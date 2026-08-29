@@ -10,9 +10,16 @@ from pathlib import Path
 
 from ironwall.data import load_portfolio_prices, load_price_series
 from ironwall.market import download_market_data
-from ironwall.metrics import analyze_prices
+from ironwall.metrics import analyze_prices, backtest_var, calculate_returns
 from ironwall.portfolio import analyze_portfolio
-from ironwall.report import build_report, render_markdown, save_report
+from ironwall.report import (
+    build_report,
+    build_var_backtest_report,
+    render_markdown,
+    render_var_backtest_markdown,
+    save_report,
+    save_var_backtest_report,
+)
 
 
 def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
@@ -32,6 +39,15 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser = subparsers.add_parser("analyze", help="Analyze a Date,Close CSV")
     analyze_parser.add_argument("--csv", type=Path, required=True)
     _add_analysis_options(analyze_parser)
+
+    backtest_parser = subparsers.add_parser(
+        "backtest",
+        help="Backtest rolling historical VaR for a Date,Close CSV",
+    )
+    backtest_parser.add_argument("--csv", type=Path, required=True)
+    backtest_parser.add_argument("--window", type=int, default=252)
+    backtest_parser.add_argument("--confidence", type=float, default=0.95)
+    backtest_parser.add_argument("--output", type=Path, help="Optional .json or .md report path")
 
     portfolio_parser = subparsers.add_parser("portfolio", help="Analyze a wide Date,TICKER... CSV")
     portfolio_parser.add_argument("--csv", type=Path, required=True)
@@ -79,6 +95,13 @@ def _emit_report(report, output: Path | None) -> None:
         print(f"Saved report: {saved_path}")
 
 
+def _emit_var_backtest_report(report, output: Path | None) -> None:
+    print(render_var_backtest_markdown(report))
+    if output is not None:
+        saved_path = save_var_backtest_report(report, output)
+        print(f"Saved report: {saved_path}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -93,6 +116,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 annual_risk_free_rate=args.risk_free_rate,
             )
             _emit_report(build_report(metrics, source=str(args.csv)), args.output)
+        elif args.command == "backtest":
+            series = load_price_series(args.csv)
+            result = backtest_var(
+                calculate_returns(series.prices),
+                confidence=args.confidence,
+                window=args.window,
+            )
+            report = build_var_backtest_report(result, source=str(args.csv))
+            _emit_var_backtest_report(report, args.output)
         elif args.command == "portfolio":
             portfolio = load_portfolio_prices(args.csv)
             analysis = analyze_portfolio(

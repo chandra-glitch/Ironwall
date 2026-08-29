@@ -39,6 +39,38 @@ class RiskMetrics:
         }
 
 
+@dataclass(frozen=True)
+class VaRBacktest:
+    """Out-of-sample exception statistics for rolling historical VaR forecasts."""
+
+    confidence: float
+    window: int
+    forecast_observations: int
+    exceptions: int
+    expected_exceptions: float
+    exception_rate: float
+    expected_exception_rate: float
+    coverage_ratio: float
+    kupiec_statistic: float
+    kupiec_p_value: float
+
+    def to_dict(self) -> dict[str, int | float]:
+        """Return JSON-ready backtest values without rounding away precision."""
+
+        return {
+            "confidence": self.confidence,
+            "window": self.window,
+            "forecast_observations": self.forecast_observations,
+            "exceptions": self.exceptions,
+            "expected_exceptions": self.expected_exceptions,
+            "exception_rate": self.exception_rate,
+            "expected_exception_rate": self.expected_exception_rate,
+            "coverage_ratio": self.coverage_ratio,
+            "kupiec_statistic": self.kupiec_statistic,
+            "kupiec_p_value": self.kupiec_p_value,
+        }
+
+
 def _validated_values(
     values: Sequence[float],
     *,
@@ -120,6 +152,70 @@ def calculate_cvar(returns: Sequence[float], confidence: float = 0.95) -> float:
     cutoff = _quantile(parsed, 1 - confidence)
     tail = tuple(value for value in parsed if value <= cutoff)
     return max(0.0, -calculate_mean(tail))
+
+
+def _binomial_log_likelihood(successes: int, observations: int, probability: float) -> float:
+    failures = observations - successes
+    success_term = successes * math.log(probability) if successes else 0.0
+    failure_term = failures * math.log1p(-probability) if failures else 0.0
+    return success_term + failure_term
+
+
+def backtest_var(
+    returns: Sequence[float],
+    *,
+    confidence: float = 0.95,
+    window: int = 252,
+) -> VaRBacktest:
+    """Backtest rolling historical VaR with the Kupiec unconditional coverage test.
+
+    Each forecast uses only the preceding ``window`` returns. An exception occurs when the
+    following realized loss is strictly larger than the forecast VaR, avoiding look-ahead bias.
+    """
+
+    parsed = _validated_values(returns, name="VaR backtest", minimum_length=3)
+    if any(value <= -1 for value in parsed):
+        raise ValueError("returns cannot be less than or equal to -100%.")
+    confidence = _validate_confidence(confidence)
+    if isinstance(window, bool) or not isinstance(window, int) or window < 2:
+        raise ValueError("window must be an integer of at least 2 observations.")
+    if window >= len(parsed):
+        raise ValueError("window must leave at least one out-of-sample return.")
+
+    exceptions = 0
+    for index in range(window, len(parsed)):
+        forecast = calculate_var(parsed[index - window : index], confidence)
+        if parsed[index] < -forecast:
+            exceptions += 1
+
+    forecast_observations = len(parsed) - window
+    expected_exception_rate = 1 - confidence
+    exception_rate = exceptions / forecast_observations
+    null_log_likelihood = _binomial_log_likelihood(
+        exceptions,
+        forecast_observations,
+        expected_exception_rate,
+    )
+    observed_log_likelihood = _binomial_log_likelihood(
+        exceptions,
+        forecast_observations,
+        exception_rate,
+    )
+    kupiec_statistic = max(0.0, -2 * (null_log_likelihood - observed_log_likelihood))
+    kupiec_p_value = math.erfc(math.sqrt(kupiec_statistic / 2))
+
+    return VaRBacktest(
+        confidence=confidence,
+        window=window,
+        forecast_observations=forecast_observations,
+        exceptions=exceptions,
+        expected_exceptions=forecast_observations * expected_exception_rate,
+        exception_rate=exception_rate,
+        expected_exception_rate=expected_exception_rate,
+        coverage_ratio=exception_rate / expected_exception_rate,
+        kupiec_statistic=kupiec_statistic,
+        kupiec_p_value=kupiec_p_value,
+    )
 
 
 def calculate_max_drawdown(prices: Sequence[float]) -> float:
