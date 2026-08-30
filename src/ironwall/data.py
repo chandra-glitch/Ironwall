@@ -53,6 +53,32 @@ def _validate_date_order(dates: list[date], current: date, *, row_number: int) -
         raise ValueError(f"Row {row_number}: dates must be strictly increasing with no duplicates.")
 
 
+def _validate_row_width(row: dict[str | None, object], *, row_number: int) -> None:
+    if None in row:
+        raise ValueError(f"Row {row_number}: contains more values than the CSV header.")
+
+
+def _validate_single_asset_header(fieldnames: list[str] | None) -> None:
+    if fieldnames != ["Date", "Close"]:
+        raise ValueError("Single-asset CSV header must contain exactly Date and Close columns.")
+
+
+def _validated_portfolio_assets(fieldnames: list[str] | None) -> tuple[str, ...]:
+    if not fieldnames or fieldnames[0] != "Date":
+        raise ValueError("Portfolio CSV must start with a Date column.")
+    if any(not name for name in fieldnames):
+        raise ValueError("Portfolio CSV column names must be non-empty.")
+    if any(name != name.strip() for name in fieldnames):
+        raise ValueError("Portfolio CSV column names cannot have leading or trailing whitespace.")
+
+    assets = tuple(fieldnames[1:])
+    if len(assets) < 2:
+        raise ValueError("Portfolio CSV must contain at least two asset columns.")
+    if len(set(assets)) != len(assets):
+        raise ValueError("Portfolio asset column names must be unique.")
+    return assets
+
+
 def load_price_series(path: str | Path) -> PriceSeries:
     """Load a ``Date,Close`` CSV and reject malformed or unsafe observations."""
 
@@ -62,10 +88,11 @@ def load_price_series(path: str | Path) -> PriceSeries:
 
     with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
-        if reader.fieldnames is None or not {"Date", "Close"}.issubset(reader.fieldnames):
-            raise ValueError("Single-asset CSV must contain Date and Close columns.")
+        _validate_single_asset_header(reader.fieldnames)
 
-        for row_number, row in enumerate(reader, start=2):
+        for row in reader:
+            row_number = reader.line_num
+            _validate_row_width(row, row_number=row_number)
             current_date = _parse_date(row.get("Date"), row_number=row_number)
             _validate_date_order(dates, current_date, row_number=row_number)
             dates.append(current_date)
@@ -85,18 +112,12 @@ def load_portfolio_prices(path: str | Path) -> PortfolioPrices:
 
     with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
-        fieldnames = reader.fieldnames or []
-        if not fieldnames or fieldnames[0] != "Date":
-            raise ValueError("Portfolio CSV must start with a Date column.")
-
-        assets = [name.strip() for name in fieldnames[1:] if name.strip()]
-        if len(assets) < 2:
-            raise ValueError("Portfolio CSV must contain at least two asset columns.")
-        if len(set(assets)) != len(assets):
-            raise ValueError("Portfolio asset column names must be unique.")
+        assets = _validated_portfolio_assets(reader.fieldnames)
 
         asset_prices: dict[str, list[float]] = {asset: [] for asset in assets}
-        for row_number, row in enumerate(reader, start=2):
+        for row in reader:
+            row_number = reader.line_num
+            _validate_row_width(row, row_number=row_number)
             current_date = _parse_date(row.get("Date"), row_number=row_number)
             _validate_date_order(dates, current_date, row_number=row_number)
             dates.append(current_date)
