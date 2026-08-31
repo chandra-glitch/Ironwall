@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 import re
+import tempfile
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -35,6 +37,35 @@ def _validated_date_range(start: str, end: str) -> tuple[str, str]:
     return start_date.isoformat(), end_date.isoformat()
 
 
+def _write_csv_atomically(
+    destination: Path,
+    header: Sequence[str],
+    rows: Sequence[Sequence[str | float]],
+) -> None:
+    """Replace the destination only after a complete CSV has been written."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=destination.parent,
+            delete=False,
+        ) as file:
+            temporary_path = Path(file.name)
+            writer = csv.writer(file)
+            writer.writerow(header)
+            writer.writerows(rows)
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def download_market_data(
     tickers: Sequence[str],
     *,
@@ -54,13 +85,16 @@ def download_market_data(
         ) from exc
 
     query: str | list[str] = normalized[0] if len(normalized) == 1 else list(normalized)
-    data = yf.download(
-        query,
-        start=start,
-        end=end,
-        auto_adjust=True,
-        progress=False,
-    )
+    try:
+        data = yf.download(
+            query,
+            start=start,
+            end=end,
+            auto_adjust=True,
+            progress=False,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Market data download failed: {exc}") from exc
     if data is None or data.empty:
         raise RuntimeError("No market data was returned for the requested tickers and dates.")
 
@@ -92,9 +126,5 @@ def download_market_data(
         raise RuntimeError("Fewer than three complete market observations were downloaded.")
 
     destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(header)
-        writer.writerows(rows)
+    _write_csv_atomically(destination, header, rows)
     return len(rows)

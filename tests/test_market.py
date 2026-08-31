@@ -3,6 +3,8 @@ import sys
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
+
 from ironwall.market import download_market_data
 
 
@@ -97,3 +99,43 @@ def test_download_multiple_tickers_creates_portfolio_csv(tmp_path, monkeypatch):
         saved = list(csv.reader(file))
     assert saved[0] == ["Date", "JPM", "BAC"]
     assert saved[-1] == ["2026-01-06", "101.0", "49.8"]
+
+
+def test_provider_failure_is_reported_without_creating_output(tmp_path, monkeypatch):
+    def fail_download(*args, **kwargs):
+        raise ConnectionError("provider unavailable")
+
+    monkeypatch.setitem(sys.modules, "yfinance", SimpleNamespace(download=fail_download))
+    output = tmp_path / "jpm.csv"
+
+    with pytest.raises(RuntimeError, match="Market data download failed: provider unavailable"):
+        download_market_data(
+            ["JPM"],
+            start="2026-01-01",
+            end="2026-02-01",
+            output_path=output,
+        )
+
+    assert not output.exists()
+
+
+def test_failed_atomic_replace_preserves_existing_download(tmp_path, monkeypatch):
+    install_fake_yfinance(monkeypatch, FakeSeries())
+    output = tmp_path / "jpm.csv"
+    output.write_text("previous valid data\n", encoding="utf-8")
+
+    def fail_replace(source, destination):
+        raise OSError("simulated replacement failure")
+
+    monkeypatch.setattr("ironwall.market.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="simulated replacement failure"):
+        download_market_data(
+            ["JPM"],
+            start="2026-01-01",
+            end="2026-02-01",
+            output_path=output,
+        )
+
+    assert output.read_text(encoding="utf-8") == "previous valid data\n"
+    assert not list(tmp_path.glob(".jpm.csv.*.tmp"))
