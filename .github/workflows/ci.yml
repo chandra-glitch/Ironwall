@@ -37,3 +37,12 @@ jobs:
 
       - name: Test
         run: pytest
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Smoke-test wheel
+        run: |
+          python -m venv .wheel-venv
+          .wheel-venv/bin/python -m pip install --no-index --no-deps dist/*.whl
+          .wheel-venv/bin/python -m ironwall --help

@@ -25,6 +25,7 @@ dependencies = []
 [project.optional-dependencies]
 market = ["yfinance>=0.2.54,<2"]
 dev = [
+  "build>=1.2,<2",
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
 ]
