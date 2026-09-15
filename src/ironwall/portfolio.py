@@ -61,17 +61,40 @@ def calculate_asset_returns(
     return returns
 
 
+def _validate_asset_returns(
+    asset_returns: Mapping[str, Sequence[float]],
+) -> dict[str, tuple[float, ...]]:
+    parsed: dict[str, tuple[float, ...]] = {}
+    for asset, values in asset_returns.items():
+        try:
+            series = tuple(float(value) for value in values)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(
+                f"Return series for {asset!r} must contain only numeric values."
+            ) from error
+        if any(not math.isfinite(value) for value in series):
+            raise ValueError(f"Return series for {asset!r} must contain only finite values.")
+        if any(value <= -1 for value in series):
+            raise ValueError(
+                f"Return series for {asset!r} cannot contain values at or below -100%."
+            )
+        parsed[asset] = series
+
+    lengths = {len(values) for values in parsed.values()}
+    if len(lengths) != 1 or not lengths or next(iter(lengths)) < 2:
+        raise ValueError("Asset return series must be aligned and contain at least two rows.")
+    return parsed
+
+
 def calculate_portfolio_returns(
     asset_returns: Mapping[str, Sequence[float]],
     weights: Mapping[str, float],
 ) -> tuple[float, ...]:
     parsed_weights = validate_weights(weights, tuple(asset_returns))
-    lengths = {len(values) for values in asset_returns.values()}
-    if len(lengths) != 1 or not lengths or next(iter(lengths)) < 2:
-        raise ValueError("Asset return series must be aligned and contain at least two rows.")
-    observations = next(iter(lengths))
+    parsed_returns = _validate_asset_returns(asset_returns)
+    observations = len(next(iter(parsed_returns.values())))
     return tuple(
-        sum(parsed_weights[asset] * float(asset_returns[asset][index]) for asset in asset_returns)
+        sum(parsed_weights[asset] * parsed_returns[asset][index] for asset in parsed_returns)
         for index in range(observations)
     )
 
@@ -84,18 +107,16 @@ def calculate_risk_contributions(
 
     assets = tuple(asset_returns)
     parsed_weights = validate_weights(weights, assets)
-    lengths = {len(values) for values in asset_returns.values()}
-    if len(lengths) != 1 or not lengths or next(iter(lengths)) < 2:
-        raise ValueError("Risk contributions require aligned return series.")
-    observations = next(iter(lengths))
-    means = {asset: calculate_mean(asset_returns[asset]) for asset in assets}
+    parsed_returns = _validate_asset_returns(asset_returns)
+    observations = len(next(iter(parsed_returns.values())))
+    means = {asset: calculate_mean(parsed_returns[asset]) for asset in assets}
 
     covariance: dict[tuple[str, str], float] = {}
     for left in assets:
         for right in assets:
             covariance[(left, right)] = sum(
-                (float(asset_returns[left][index]) - means[left])
-                * (float(asset_returns[right][index]) - means[right])
+                (parsed_returns[left][index] - means[left])
+                * (parsed_returns[right][index] - means[right])
                 for index in range(observations)
             ) / (observations - 1)
 

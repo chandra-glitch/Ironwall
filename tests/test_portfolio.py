@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from ironwall.portfolio import (
@@ -43,6 +45,34 @@ def test_complete_portfolio_analysis():
     assert analysis.metrics.return_observations == 3
     assert analysis.metrics.maximum_drawdown > 0
     assert sum(analysis.risk_contributions.values()) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "invalid_value, message",
+    [
+        ("not-a-number", "numeric"),
+        (math.nan, "finite"),
+        (math.inf, "finite"),
+        (-1.0, "-100%"),
+        (-1.01, "-100%"),
+    ],
+)
+@pytest.mark.parametrize(
+    "operation",
+    [calculate_portfolio_returns, calculate_risk_contributions],
+)
+def test_direct_portfolio_apis_reject_invalid_asset_returns(
+    invalid_value,
+    message,
+    operation,
+):
+    returns = {
+        "JPM": [0.01, 0.02],
+        "BAC": [0.01, invalid_value],
+    }
+
+    with pytest.raises(ValueError, match=message):
+        operation(returns, WEIGHTS)
 
 
 @pytest.mark.parametrize(
